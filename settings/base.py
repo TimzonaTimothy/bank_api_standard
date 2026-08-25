@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from os import getenv,  path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent.parent 
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 APPS_DIR = BASE_DIR / 'core_apps'
 
