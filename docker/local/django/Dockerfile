@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \
     libpq-dev
 
-COPY ./requirements.txt .
+COPY ./requirements ./requirements
 
 RUN pip wheel --wheel-dir /usr/src/app/wheels \
-    -r ${BUILD_ENVIRONMENT}.txt
+    -r requirements/${BUILD_ENVIRONMENT}.txt
 
 # Stage 2: Run Stage
 FROM python AS python-run-stage
