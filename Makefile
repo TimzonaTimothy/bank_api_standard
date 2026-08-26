@@ -32,4 +32,4 @@ network-inspect:
 	docker network inspect banker_local_nw
 
 banker-db:
-	docker compose -f local.yml exec postgres psql --username=supabase --dbname=postgres
+	docker compose -f local.yml exec postgres psql --username=alpha --dbname=banker
