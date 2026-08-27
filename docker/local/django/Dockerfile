@@ -46,9 +46,12 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels/ /wheels/* \
 
 COPY --chown=django:django ./docker/local/django/entrypoint.sh /entrypoint.sh
 COPY --chown=django:django ./docker/local/django/start.sh /start.sh
+COPY --chown=django:django ./docker/local/django/celery/worker/start.sh /start-celeryworker.sh
+COPY --chown=django:django ./docker/local/django/celery/flower/start.sh /start-celeryflower.sh
+COPY --chown=django:django ./docker/local/django/celery/beat/start.sh /start-celerybeat.sh
 
-RUN sed -i 's/\r$//g' /entrypoint.sh /start.sh && \
-    chmod +x /entrypoint.sh /start.sh 
+RUN sed -i 's/\r$//g' /entrypoint.sh /start.sh /start-celeryworker.sh /start-celeryflower.sh /start-celerybeat.sh && \
+    chmod +x /entrypoint.sh /start.sh /start-celeryworker.sh /start-celeryflower.sh /start-celerybeat.sh
 
 RUN mkdir -p /app/staticfiles && \
     chown -R django:django /app/staticfiles && \
