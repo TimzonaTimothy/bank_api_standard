@@ -1,3 +1,4 @@
+from datetime import timedelta
 from os import path, getenv
 from dotenv import load_dotenv
 from .base import * # noga
@@ -27,3 +28,11 @@ DEFAULT_FROM_EMAIL = getenv('DEFAULT_FROM_EMAIL')
 DOMAIN = getenv('DOMAIN')
 
 MAX_UPLOAD_SIZE = 1 * 1024 * 1024  # 1 MB
+
+CSRF_TRUSTED_ORIGINS = ["http://localhost:8080"]
+
+LOCKOUT_DURATION = timedelta(minutes=30)  # Duration of lockout period
+
+LOGIN_ATTEMPTS = 5  # Number of allowed failed login attempts before lockout
+
+OTP_EXPIRATION = timedelta(minutes=5)  # OTP expiration time
