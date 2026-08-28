@@ -83,7 +83,7 @@ class User(AbstractUser):
         self.otp_expiry_time = timezone.now() + settings.OTP_EXPIRATION 
         self.save()
 
-    def verify(self, otp:str) -> bool:
+    def verify_otp(self, otp:str) -> bool:
         if self.otp == otp and self.otp_expiry_time > timezone.now():
             self.otp = ""
             self.otp_expiry_time = None 
