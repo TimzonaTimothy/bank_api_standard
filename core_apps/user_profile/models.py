@@ -10,6 +10,7 @@ from cloudinary.models import CloudinaryField
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 from core_apps.common.models import TimeStampedModel
+from core_apps.accounts.models import BankAccount
 # Create your models here.
 
 
@@ -62,6 +63,8 @@ class Profile(TimeStampedModel):
     city = models.CharField(_("City"), max_length=100, default="Unknown")
     country = CountryField(_("Country"), default=settings.DEFAULT_COUNTRY)
     employment_status = models.CharField(_("Employment Status"), max_length=20, choices=EmploymentStatus.choices, default=EmploymentStatus.SELF_EMPLOYED)
+    account_currency = models.CharField(_("Account Currency"), max_length=20, choices=BankAccount.AccountCurrency.choices, default=BankAccount.AccountCurrency.NAIRA, null=True, blank=True)
+    account_type = models.CharField(_("Account Type"), max_length=20, choices=BankAccount.AccountType.choices, default=BankAccount.AccountType.SAVINGS, null=True, blank=True)
     photo = CloudinaryField(_("Photo"), blank=True, null=True)
     photo_url = models.URLField(_("Photo URL"), blank=True, null=True)
     id_photo = CloudinaryField(_("ID Photo"), blank=True, null=True) 

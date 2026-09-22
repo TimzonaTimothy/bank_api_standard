@@ -1,0 +1,26 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Account Created {% endblock %}
+
+{% block header %}Account Locked{% endblock %}
+
+{% block content %}
+    <h2>Welcome to {{ site_name }}</h2>
+    <p>Dear {{ user.full_name }},</p> 
+    <p>We're excited to inform you that your new bank account has been created successfully</p>
+    <p>Here are your account details:</p>
+    <ul>
+        <li><strong>Username:</strong> {{ user.username }}</li>
+        <li><strong>Security Question:</strong> {{ user.security_question }}</li>
+        <li><strong>Security Answer:</strong> {{ user.security_answer }}</li>
+        <li><strong>Account Number:</strong> {{ account.account_number }}</li>
+        <li><strong>Account Type:</strong> {{ account.get_account_type_display }}</li>
+        <li><strong>Account Currency:</strong> {{ account.get_currency_display }}</li>
+    </ul>
+
+    <p><strong>Important:</strong> To fully activate your account, please visit your nearest branch with your {{ user.profile.get_means_of identification_display }} and a valid document for verification </p>
+    <p>If you have any questions, please don't hesitate to contact our support team at</p>
+    <p>Thank you for choosing {{ site_name }}. We look forward to serving you!</p>
+    <p>Best regards</p> 
+    <p><strong>{{ site_name}}</strong> Team</p>
+{% endblock content %}
