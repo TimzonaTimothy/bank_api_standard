@@ -101,7 +101,7 @@ class TransactionSerializer(serializers.ModelSerializer):
     sender_account = serializers.CharField(max_length=20, required=False)
     receiver_account = serializers.CharField(max_length=20, required=False)
     amount = serializers.DecimalField(
-        max_digits=10, decimal_palces=2, min_value=Decimal("0.1")
+        max_digits=12, decimal_places=2, min_value=Decimal("0.1")
     )
 
     class Meta:
@@ -127,7 +127,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             instance.sender.full_name if instance.sender else None 
         )
         representation['receiver'] = (
-            instance.receiver.full_name if instance.sender else None
+            instance.receiver.full_name if instance.receiver else None
         )
         representation['sender_account'] = (
             instance.sender_account.account_number if instance.sender_account else None
@@ -150,7 +150,7 @@ class TransactionSerializer(serializers.ModelSerializer):
                 data['sender_account'] = account 
                 data['receiver_account'] = None 
                 if account.account_balance < amount:
-                    raise serializers.validationError(
+                    raise serializers.ValidationError(
                         "Insufficient funds for withdrawal"
                     )
             elif transaction_type == Transaction.TransactionType.DEPOSIT:
@@ -164,7 +164,7 @@ class TransactionSerializer(serializers.ModelSerializer):
                     account_number = sender_account_number
                 )
                 receiver_account = BankAccount.objects.get(
-                    account_number = receiver_account
+                    account_number = receiver_account_number
                 )
                 data['sender_account'] = sender_account
                 data['receiver_account'] = receiver_account
@@ -217,5 +217,4 @@ class UsernameVerificationSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Invalid Username"
             )
-        return value     
-    
+        return value
