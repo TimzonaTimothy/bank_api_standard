@@ -1,0 +1,18 @@
+{% extends "emails/base.html" %}
+{% load humanize %}
+
+{% block title %}Card Top-Up Confirmation{% endblock %}
+
+{% block content %}
+    <h2>Card Top-Up Confirmation</h2>
+    <p>Dear {{ user.full_name }}</p>
+    <p>Your virtual card has been topped up successfully.</p>
+    <ul>
+        <li><strong>Card:</strong> {{ card_number }}</li>
+        <li><strong>Amount:</strong> {{ currency }} {{ amount|intcomma }}</li>
+        <li><strong>New Card Balance:</strong> {{ currency }} {{ new_balance|intcomma }}</li>
+    </ul>
+    <p>If you did not authorize this transaction, please contact our customer support immediately.</p>
+    <p>Thank you for banking with {{ site_name }}.</p>
+    <p>Best regards,<br>{{ site_name }} Team</p>
+{% endblock %}

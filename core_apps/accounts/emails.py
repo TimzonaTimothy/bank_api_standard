@@ -7,6 +7,23 @@ from loguru import logger
 from core_apps.accounts.models import BankAccount
 
 
+def send_suspicious_activity_email(alert) -> None:
+    account = alert.account
+    context = {
+        "user": account.user, "account_number": f"****{account.account_number[-4:]}",
+        "transaction": alert.transaction, "reason": alert.reason,
+        "currency": account.get_currency_display(), "site_name": settings.SITE_NAME,
+    }
+    html_email = render_to_string("emails/suspicious_activity.html", context)
+    email = EmailMultiAlternatives(
+        _("Security Alert: Unusual Account Activity"), strip_tags(html_email),
+        settings.DEFAULT_FROM_EMAIL, [account.user.email],
+    )
+    email.attach_alternative(html_email, "text/html")
+    if email.send() != 1:
+        raise RuntimeError("Suspicious activity email was not sent.")
+
+
 def send_account_creation_email(user, bank_account):
     subject = _("Your New Account Has Been Created")
     from_email = settings.DEFAULT_FROM_EMAIL

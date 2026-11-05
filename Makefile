@@ -33,3 +33,15 @@ network-inspect:
 
 banker-db:
 	docker compose -f local.yml exec postgres psql --username=alpha --dbname=banker
+
+.PHONY: backup backups restore
+
+backup:
+	docker compose -f local.yml exec -T postgres /usr/local/bin/maintenance/backup.sh
+
+backups:
+	docker compose -f local.yml exec -T postgres /usr/local/bin/maintenance/list-backups.sh
+
+restore:
+	@test -n "$(BACKUP)" || (echo "Usage: make restore BACKUP=backup_filename.dump" >&2; exit 1)
+	docker compose -f local.yml exec -T postgres /usr/local/bin/maintenance/restore.sh "$(BACKUP)"

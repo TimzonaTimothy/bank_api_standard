@@ -29,6 +29,7 @@ services:
       - "5432:5432"
     volumes:
       - banker_local_db:/var/lib/postgresql/data
+      - banker_local_db_backups:/backups
     env_file:
       - ./.envs/.env.local  
     networks:
@@ -114,6 +115,7 @@ networks:
 
 volumes:
   banker_local_db:
+  banker_local_db_backups:
   banker_local_mailpit_db:
   logs_store:
   rabbitmq_data:

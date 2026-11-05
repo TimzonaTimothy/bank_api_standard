@@ -59,4 +59,43 @@ def create_bank_account(user,  currency: str, account_type: str) -> str:
             is_primary=is_primary
         )
         send_account_creation_email(user, bank_account)
-    return bank_account 
+    return bank_account
+
+
+@transaction.atomic
+def credit_daily_savings_interest(account_id, interest_date):
+    from django.conf import settings
+    from django.utils import timezone
+    from decimal import Decimal
+    from .models import SavingsInterest, Transaction
+
+    account = BankAccount.objects.select_for_update().get(pk=account_id)
+    if (
+        account.account_type != BankAccount.AccountType.SAVINGS
+        or account.account_status != BankAccount.AccountStatus.ACTIVE
+        or not account.kyc_verified or not account.fully_activated
+        or account.account_balance <= 0
+    ):
+        return None
+    if SavingsInterest.objects.filter(account=account, date=interest_date).exists():
+        return None
+    amount = account.calculate_interest()
+    opening_balance = account.account_balance
+    if opening_balance + amount > Decimal("9999999999.99"):
+        raise ValueError("Interest credit would exceed the account balance limit.")
+    record = None
+    if amount > 0:
+        BankAccount.objects.filter(pk=account.pk).update(
+            account_balance=opening_balance + amount, updated_at=timezone.now(),
+        )
+        record = Transaction.objects.create(
+            user=account.user, receiver=account.user, receiver_account=account,
+            amount=amount, description=f"Savings interest for {interest_date}",
+            transaction_type=Transaction.TransactionType.DEPOSIT,
+            status=Transaction.TransactionStatus.COMPLETED,
+        )
+    return SavingsInterest.objects.create(
+        account=account, date=interest_date, opening_balance=opening_balance,
+        annual_rate=Decimal(str(settings.SAVINGS_ANNUAL_INTEREST_RATE)),
+        amount=amount, transaction=record,
+    )

@@ -16,6 +16,7 @@ from os import getenv,  path
 from loguru import logger
 import cloudinary
 from datetime import date, timedelta
+from celery.schedules import crontab
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -56,7 +57,7 @@ THIRD_PARTY_APPS = [
     'django_celery_beat', 
 ]
 
-LOCAL_APPS = ["core_apps.user_auth", "core_apps.user_profile", "core_apps.common", "core_apps.accounts"]
+LOCAL_APPS = ["core_apps.user_auth", "core_apps.user_profile", "core_apps.common", "core_apps.accounts", "core_apps.cards"]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -247,7 +248,27 @@ CELERY_RESULT_EXTENDED = True
 CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
 CELERY_TASK_TIME_LIMIT = 5 *60
 CELERY_TASK_SOFT_TIME_LIMIT = 60
-CELERY_BEAT_SCHEDULAR = "django_celery_beat.schedulers:DatabaseSchedular"
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_BEAT_SCHEDULE = {
+    "daily-savings-interest": {
+        "task": "core_apps.accounts.tasks.daily_savings_interest",
+        "schedule": crontab(hour=0, minute=5),
+    },
+    "detect-suspicious-activity": {
+        "task": "core_apps.accounts.tasks.detect_suspicious_activity",
+        "schedule": crontab(minute="*/15"),
+    },
+}
+
+# Annual rate as a fraction; daily credits use the current balance and a 365-day year.
+SAVINGS_ANNUAL_INTEREST_RATE = getenv("SAVINGS_ANNUAL_INTEREST_RATE", "0.03")
+SUSPICIOUS_ACTIVITY_WINDOW_MINUTES = int(getenv("SUSPICIOUS_ACTIVITY_WINDOW_MINUTES", "60"))
+SUSPICIOUS_ACTIVITY_TRANSACTION_COUNT = int(getenv("SUSPICIOUS_ACTIVITY_TRANSACTION_COUNT", "5"))
+SUSPICIOUS_ACTIVITY_AMOUNT_THRESHOLDS = {
+    "us_dollar": getenv("SUSPICIOUS_ACTIVITY_USD_THRESHOLD", "10000"),
+    "pound_sterling": getenv("SUSPICIOUS_ACTIVITY_GBP_THRESHOLD", "10000"),
+    "naira": getenv("SUSPICIOUS_ACTIVITY_NGN_THRESHOLD", "1000000"),
+}
 CELERY_WORKER_SEND_TASK_EVENTS = True
 
 

@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.auth import get_user_model 
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
+from django.conf import settings
+from decimal import Decimal, ROUND_HALF_UP
 # Create your models here.
 
 from core_apps.common.models import TimeStampedModel
@@ -35,6 +37,18 @@ class BankAccount(TimeStampedModel):
     verification_date = models.DateTimeField(_("Verification Date"), null=True, blank=True)
     verfication_notes = models.TextField(_("Verification Notes"), null=True, blank=True)
     fully_activated = models.BooleanField(_("Fully Activated"), default=False)
+
+    def calculate_interest(self, days: int = 1) -> Decimal:
+        if not isinstance(days, int) or isinstance(days, bool) or days < 1:
+            raise ValueError("Days must be a positive integer.")
+        rate = Decimal(str(settings.SAVINGS_ANNUAL_INTEREST_RATE))
+        if not rate.is_finite() or rate < 0 or rate > 1:
+            raise ValueError("Savings annual interest rate must be between 0 and 1.")
+        if self.account_type != self.AccountType.SAVINGS or self.account_balance <= 0:
+            return Decimal("0.00")
+        return (self.account_balance * rate * days / Decimal("365")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP,
+        )
     
     def __str__(self) -> str:
         return f"{self.user.full_name}'s - {self.get_currency_display()} {self.get_account_type_display()} Account - {self.account_number}"
@@ -87,3 +101,33 @@ class Transaction(TimeStampedModel):
         verbose_name_plural = _("Transactions")
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["created_at"])]
+
+
+class SavingsInterest(TimeStampedModel):
+    account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="interest_credits")
+    date = models.DateField(_("Interest Date"))
+    opening_balance = models.DecimalField(max_digits=12, decimal_places=2)
+    annual_rate = models.DecimalField(max_digits=7, decimal_places=6)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction = models.OneToOneField(
+        Transaction, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="interest_credit",
+    )
+
+    class Meta:
+        ordering = ["-date"]
+        constraints = [
+            models.UniqueConstraint(fields=["account", "date"], name="unique_daily_savings_interest"),
+        ]
+
+
+class SuspiciousActivityAlert(TimeStampedModel):
+    transaction = models.OneToOneField(
+        Transaction, on_delete=models.PROTECT, related_name="suspicious_activity_alert",
+    )
+    account = models.ForeignKey(BankAccount, on_delete=models.PROTECT, related_name="activity_alerts")
+    reason = models.TextField(_("Reason"))
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

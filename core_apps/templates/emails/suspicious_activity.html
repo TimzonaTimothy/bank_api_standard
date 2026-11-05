@@ -1,0 +1,20 @@
+{% extends "emails/base.html" %}
+{% load humanize %}
+
+{% block title %}Unusual Account Activity{% endblock %}
+
+{% block content %}
+    <h2>Unusual Account Activity</h2>
+    <p>Dear {{ user.full_name }},</p>
+    <p>We noticed activity on your account that may need your attention.</p>
+    <ul>
+        <li><strong>Account:</strong> {{ account_number }}</li>
+        <li><strong>Reference:</strong> {{ transaction.id }}</li>
+        <li><strong>Amount:</strong> {{ currency }} {{ transaction.amount|intcomma }}</li>
+        <li><strong>Date:</strong> {{ transaction.created_at }}</li>
+        <li><strong>Reason:</strong> {{ reason }}</li>
+    </ul>
+    <p>If you recognize this activity, no action is required. Otherwise, contact our customer support immediately.</p>
+    <p>We will never ask you to share your password or OTP by email.</p>
+    <p>{{ site_name }} Team</p>
+{% endblock %}
