@@ -5,6 +5,7 @@ from decimal import Decimal
 
 
 class AccountVerificationSerializer(serializers.ModelSerializer):
+    verification_notes = serializers.CharField(source="verfication_notes", required=False)
     class Meta:
         model = BankAccount
         fields = [
@@ -21,7 +22,7 @@ class AccountVerificationSerializer(serializers.ModelSerializer):
         kyc_verified = data.get("kyc_verified")
         kyc_submitted = data.get("kyc_submitted")
         verification_date = data.get("verification_date")
-        verification_notes = data.get("verification_notes")
+        verification_notes = data.get("verfication_notes")
 
         if kyc_verified:
             if not verification_date:
@@ -34,7 +35,7 @@ class AccountVerificationSerializer(serializers.ModelSerializer):
                 )
 
             if kyc_submitted and not all(
-                [kyc_verified.verification_date, verification_notes]
+                [verification_date, verification_notes]
             ):
                 raise serializers.ValidationError(
                     _(
@@ -119,12 +120,12 @@ class TransactionSerializer(serializers.ModelSerializer):
             "receiver_account"
         ]
         read_only_fields = ['id', 'status','created_at']
-        
+
     def to_representation(self, instance:Transaction) -> str:
         representation = super().to_representation(instance)
         representation['amount'] = str(representation['amount'])
         representation['sender'] = (
-            instance.sender.full_name if instance.sender else None 
+            instance.sender.full_name if instance.sender else None
         )
         representation['receiver'] = (
             instance.receiver.full_name if instance.receiver else None
@@ -135,20 +136,20 @@ class TransactionSerializer(serializers.ModelSerializer):
         representation['receiver_account'] = (
             instance.receiver_account.account_number if instance.receiver_account else None
         )
-        
+
         return representation
-    
+
     def validate(self, data):
         transaction_type = data.get('transaction_type')
         sender_account_number = data.get("sender_account")
         receiver_account_number = data.get("receiver_account")
         amount = data.get("amount")
-        
+
         try:
             if transaction_type == Transaction.TransactionType.WITHDRAWAL:
                 account = BankAccount.objects.get(account_number=sender_account_number)
-                data['sender_account'] = account 
-                data['receiver_account'] = None 
+                data['sender_account'] = account
+                data['receiver_account'] = None
                 if account.account_balance < amount:
                     raise serializers.ValidationError(
                         "Insufficient funds for withdrawal"
@@ -157,7 +158,7 @@ class TransactionSerializer(serializers.ModelSerializer):
                 account = BankAccount.objects.get(
                     account_number = receiver_account_number
                 )
-                data['sender_account'] = None 
+                data['sender_account'] = None
                 data['receiver_account'] = account
             else:
                 sender_account = BankAccount.objects.get(
@@ -168,7 +169,7 @@ class TransactionSerializer(serializers.ModelSerializer):
                 )
                 data['sender_account'] = sender_account
                 data['receiver_account'] = receiver_account
-                
+
                 if sender_account == receiver_account:
                     raise serializers.ValidationError(
                         "Sender and receiver accounts must be different"
@@ -176,45 +177,11 @@ class TransactionSerializer(serializers.ModelSerializer):
                 if sender_account.currency != receiver_account.currency:
                     raise serializers.ValidationError(
                         "Transfer are only allowed between accounts with the same currency"
-                    ) 
+                    )
                 if sender_account.account_balance < amount:
                     raise serializers.ValidationError(
                         "Insufficient funds for transfer"
                     )
         except BankAccount.DoesNotExist:
             raise serializers.ValidationError("One or both accounts not found")
-        return data 
-
-class SecurityQuestionSerializer(serializers.Serializer):
-    security_answer = serializers.CharField(max_length=30)
-    
-    def validate(self, data:dict) -> dict:
-        user = self.context['request'].user
-        if data['security_answer'] != user.security_answer:
-            raise serializers.ValidationError(
-                "Incorrect security answer."
-            )
-        return data 
-    
-    
-class OTPVerificationSerializer(serializers.Serializer):
-    otp = serializers.CharField(max_length=6)
-    
-    def validate(self, data:dict) -> dict:
-        user = self.context['request'].user
-        if not user.verify_otp(data["otp"]):
-            raise serializers.ValidationError(
-                "Invalid or expired OTP"
-            )
-        return data 
- 
-class UsernameVerificationSerializer(serializers.Serializer):
-    username = serializers.CharField(max_length=12)
-    
-    def validate_username(self, value:dict) -> dict:
-        user = self.context['request'].user
-        if user.username != value:
-            raise serializers.ValidationError(
-                "Invalid Username"
-            )
-        return value
+        return data

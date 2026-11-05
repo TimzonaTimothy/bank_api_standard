@@ -2,12 +2,18 @@
 {% load humanize %}
 
 {% block title %}
-    Your Transfer OTP
+    Your Transaction OTP
 {% endblock %}
 
 {% block content %}
     <h2>Your One-Time Password</h2>
     <p>Your OTP is: <b>{{ otp }}</b>.</p>
+    {% if transaction_data %}
+    <p>Amount: {{ transaction_data.amount }}</p>
+    <p>From account: {{ transaction_data.sender_account }}</p>
+    {% if transaction_data.receiver_account %}<p>To account: {{ transaction_data.receiver_account }}</p>{% endif %}
+    <p>Only enter this code if these are the transaction details you requested.</p>
+    {% endif %}
     <p>This OTP will expire in <b>{{ expiry_time }}</b> minutes.</p>
     <p>If you did not request this OTP, please ignore this email and contact our support immediately</p>
     <p>Best regards</p>

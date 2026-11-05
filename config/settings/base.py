@@ -47,6 +47,7 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'django_countries',
     'phonenumber_field',
     'drf_spectacular',
@@ -191,12 +192,15 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
-        'user': '1000/hour'
+        'user': '1000/hour',
+        'auth': '20/minute',
+        'transaction_auth': '10/minute',
     }
 }
 
 # JWT Configuration
 SIMPLE_JWT = {
+    "CHECK_REVOKE_TOKEN": True,
     "SIGNING_KEY": getenv("SIGNING_KEY"),
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -294,6 +298,13 @@ COOKIE_PATH = "/"
 COOKIE_HTTPONLY = True
 
 COOKIE_SECURE = getenv("COOKIE_SECURE","True") == "True"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+TRANSACTION_LIMITS = {
+    'us_dollar': getenv('DAILY_USD_LIMIT', '10000'),
+    'pound_sterling': getenv('DAILY_GBP_LIMIT', '10000'),
+    'naira': getenv('DAILY_NGN_LIMIT', '1000000'),
+}
 
 
 
@@ -318,7 +329,7 @@ LOGURU_LOGGING = {
             "retention": "30 days", 
             "compression": "zip",
             "backtrace": True,
-            "diagnose": True,
+            "diagnose": False,
         }
     ]
 }

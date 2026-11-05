@@ -8,6 +8,15 @@ from .forms import UserChangeForm, UserCreationForm
 
 @admin.register(User) 
 class CustomUserAdmin(UserAdmin):
+    def has_add_permission(self, request):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
     form = UserChangeForm 
     add_form = UserCreationForm 
     model = User
@@ -51,7 +60,6 @@ class CustomUserAdmin(UserAdmin):
             {
                 "fields": (
                     "security_question",
-                    "security_answer",
                 )
             },
         ),

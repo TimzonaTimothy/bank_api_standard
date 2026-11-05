@@ -1,194 +1,140 @@
-from typing import Any, Optional
-from django.conf import settings 
-from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.contrib.auth import authenticate
+from django.db import transaction
+from django.db.models import F
+from django.middleware.csrf import get_token
 from django.utils import timezone
-from djoser.views import TokenCreateView
-from djoser.views import User 
-from loguru import logger
-from rest_framework import permissions, status
+from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
-from rest_framework.views import Request
 from rest_framework.views import APIView
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.utils import get_md5_hash_password
 
 from .emails import send_otp_email
-from .utils import generate_otp 
-
-User = get_user_model()
-
-def set_auth_cookies(response: Response, access_token: str, refresh_token: Optional[str]=None) -> None:
-    access_token_lifetime = settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()
-    cookie_settings = {
-        'path': settings.COOKIE_PATH,
-        'secure': settings.COOKIE_SECURE,
-        'httponly': settings.COOKIE_HTTPONLY,
-        'samesite': settings.COOKIE_SAMESITE,
-        'max_age': access_token_lifetime,
-    }
-    response.set_cookie("access",access_token,**cookie_settings)
-
-    if refresh_token:
-        refresh_token_lifetime = settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()
-        refresh_cookie_settings = cookie_settings.copy()
-        refresh_cookie_settings['max_age'] = refresh_token_lifetime
-        response.set_cookie("refresh", refresh_token, **refresh_cookie_settings)
-
-    logged_in_cookie_settings = cookie_settings.copy()
-    logged_in_cookie_settings['httponly'] = False
-    response.set_cookie("logged_in","true", **logged_in_cookie_settings)
+from .models import User, OTPChallenge
+from .security import enforce_csrf, issue_challenge, verify_challenge
 
 
-class CustomTokenCreateView(TokenCreateView):
-    def _action(self, serializer):
-        user = serializer.user
-        if user.is_locked_out:
-            return Response(
-                {
-                    'error': f"Account is locked due to multiple falied login attempts. Please "
-                    f"try again after {settings.LOCKOUT_DURATION.total_seconds() / 60} minutes"
-                }, 
-                status = status.HTTP_403_FORBIDDEN,
-            )
-        user.reset_failed_login_attempts()
+def set_auth_cookies(response, access_token, refresh_token=None):
+    for name, token, lifetime in [
+        ("access", access_token, settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME']),
+        ("refresh", refresh_token, settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME']),
+    ]:
+        if token:
+            response.set_cookie(name, token, max_age=int(lifetime.total_seconds()),
+                                path=settings.COOKIE_PATH, secure=settings.COOKIE_SECURE,
+                                httponly=True, samesite=settings.COOKIE_SAMESITE)
+    response.set_cookie("logged_in", "true", secure=settings.COOKIE_SECURE,
+                        httponly=False, samesite=settings.COOKIE_SAMESITE)
 
-        otp = generate_otp()
-        user.set_otp(otp) 
-        send_otp_email(user.email, otp)
 
-        logger.info(f"OTP sent for login to user: {user.email}")
+class ChallengeInputSerializer(serializers.Serializer):
+    challenge_id = serializers.UUIDField()
+    otp = serializers.RegexField(r"^\d{6}$")
 
-        return Response(
-            {
-                "success": "OTP sent to your email",
-                'email': user.email, 
-            },
-            status=status.HTTP_200_OK
-        )
-    
 
-    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        email = request.data.get('email')
-        existing_user = User.objects.filter(email=email).first()
-        if existing_user and existing_user.is_locked_out:
-            return Response(
-                {
-                    "error": f"Account is locked due to multiple failed login attempts. "
-                    f"Please try again after {settings.LOCKOUT_DURATION.total_seconds() / 60} minutes",
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
+class LoginInputSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
 
-        serializer = self.get_serializer(data=request.data)
 
-        try:
-            serializer.is_valid(raise_exception=True)
-        except Exception:
-            email = request.data.get('email')
-            user = User.objects.filter(email=email).first()
-            if user:
-                user.handle_failed_login_attempts()
-                failed_attempts = user.failed_login_attempts
-                logger.error(
-                    f"Failed login attemtps: {failed_attempts} for user: {email}"
-                )
-                if failed_attempts >= settings.LOGIN_ATTEMPTS:
-                    return Response(
-                        {
-                            "error": f"You have exceeded the maximum number of login attempts. "
-                            f"Your account has been locked for {settings.LOCKOUT_DURATION.total_seconds() / 60} minutes. "
-                            f"An email has been sent to you with futher instructions",
-                        },
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-            else:
-                logger.error(f"Failed login attempts for non-existent user: {email}")
-
-            return Response(
-                {
-                    "error":"Your Login Credentials are not correct"
-                }, 
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return self._action(serializer)
-    
-    
-class CustomTokenRefreshView(TokenRefreshView):
-    def post(self, request:Request, *agrs: Any, **kwargs:Any) -> Response:
-        refresh_token = request.COOKIES.get("refresh")
-        
-        if refresh_token:
-            request.data["refresh"] = refresh_token
-            
-        refresh_res = super().post(request, *args, **kwargs)
-        
-        if refresh_res.status_code == status.HTTP_200_OK:
-            access_token = refresh_res.data.get("access")
-            refresh_token = refresh_res.data.get("refresh")
-            
-            if access_token and refresh_token:
-                set_auth_cookies(
-                    refresh_res, 
-                    access_token=access_token,
-                    refresh_token=refresh_token,
-                )
-                 
-                refresh_res.data.pop("access", None)
-                refresh_res.data.pop("refresh", None)
-                 
-                refresh_res.data["message"] = "Access tokens refreshed successfully"
-                
-            else:
-                refresh_res.data["message"] = "Access or refresh token not found in refresh data"
-                logger.error(
-                    "Access or refresh token not found in refresh data"
-                )
-        return refresh_res
-    
-    
-class OTPVerifyView(APIView):
+class PublicAuthView(APIView):
     permission_classes = [permissions.AllowAny]
-    
-    def post(self, request):
-        otp = request.data.get("otp")
-        
-        if not otp:
-            return Response(
-                {"error":"OTP is required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-            
-        user = User.objects.filter(otp=otp, otp_expiry_time__gt=timezone.now()).first() 
-        if not user:
-            return Response(
-                {"error":"Invalid or expired OTP"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-            
-        if user.is_locked_out:
-            return Response(
-                {"error":f"Account is locked due to multiple failed login attempts." f"Please try again after {settings.LOCKOUT_DURATION.total_seconds() / 60} minutes"},
-                status=status.HTTP_403_FORBIDDEN, 
-            )
-        user.verify_otp(otp) 
-        
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
-        refresh_token = str(refresh)
-        
-        response = Response(
-            {"success":"Login successful. Now add your profile information. so that we can create an account for you"}, 
-            status=status.HTTP_200_OK, 
-        )
-        set_auth_cookies(response, access_token, refresh_token)
-        logger.info(f"Successful login with OTP: {user.email}")
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response['Cache-Control'] = 'no-store'
         return response
-    
-    
+
+
+class CSRFTokenView(PublicAuthView):
+    def get(self, request):
+        return Response({"csrfToken": get_token(request)})
+
+
+class CustomTokenCreateView(PublicAuthView):
+    def post(self, request):
+        enforce_csrf(request)
+        serializer = LoginInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email'].lower()
+        user = authenticate(request=request, username=email, password=serializer.validated_data['password'])
+        if user is None or user.is_locked_out:
+            # Lock counters are serialized to prevent parallel attempts losing updates.
+            with transaction.atomic():
+                existing = User.objects.select_for_update().filter(email=email).first()
+                if existing and not existing.is_locked_out:
+                    existing.handle_failed_login_attempts()
+            return Response({"error": "Invalid credentials or account unavailable."}, status=400)
+        challenge, code = issue_challenge(user, "login")
+        send_otp_email(user.email, code)
+        return Response({"message": "Verify the code sent to your email.", "challenge_id": str(challenge.pk)})
+
+
+class OTPVerifyView(PublicAuthView):
+    def post(self, request):
+        enforce_csrf(request)
+        serializer = ChallengeInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if not verify_challenge(data['challenge_id'], data['otp'], "login"):
+            return Response({"error": "Invalid or expired challenge."}, status=400)
+        with transaction.atomic():
+            owner_id = OTPChallenge.objects.values_list('user_id', flat=True).get(pk=data['challenge_id'])
+            user = User.objects.select_for_update().get(pk=owner_id)
+            challenge = OTPChallenge.objects.select_for_update().get(pk=data['challenge_id'])
+            if (challenge.consumed_at or challenge.expires_at <= timezone.now()
+                    or not user.is_active or user.is_locked_out or challenge.auth_version != user.auth_version):
+                return Response({"error": "Invalid or expired challenge."}, status=400)
+            challenge.consumed_at = timezone.now()
+            challenge.save(update_fields=['consumed_at'])
+            user.reset_failed_login_attempts()
+            refresh = RefreshToken.for_user(user)
+            refresh['auth_version'] = user.auth_version
+            response = Response({"message": "Login successful."})
+            set_auth_cookies(response, str(refresh.access_token), str(refresh))
+            return response
+
+
+class CustomTokenRefreshView(PublicAuthView):
+    def post(self, request):
+        enforce_csrf(request)
+        raw = request.COOKIES.get("refresh") or request.data.get("refresh")
+        try:
+            with transaction.atomic():
+                refresh = RefreshToken(raw)
+                user = User.objects.select_for_update().get(pk=refresh['user_id'])
+                if (not user.is_active or user.is_locked_out
+                        or refresh.get('auth_version') != user.auth_version
+                        or refresh.get('hash_password') != get_md5_hash_password(user.password)):
+                    raise TokenError("Revoked token")
+                serializer = TokenRefreshSerializer(data={"refresh": raw})
+                serializer.is_valid(raise_exception=True)
+        except (TokenError, User.DoesNotExist, KeyError, TypeError, ValueError):
+            return Response({"error": "Invalid refresh token."}, status=401)
+        response = Response({"message": "Tokens refreshed successfully."})
+        set_auth_cookies(response, serializer.validated_data['access'], serializer.validated_data.get('refresh'))
+        return response
+
+
 class LogoutAPIView(APIView):
-    def post(self, request, *args,**kwargs):
+    def post(self, request):
+        enforce_csrf(request)
+        # Invalidate all tokens for this user, including already-issued access tokens.
+        User.objects.filter(pk=request.user.pk).update(auth_version=F('auth_version') + 1)
+        raw = request.COOKIES.get('refresh')
+        if raw:
+            try:
+                RefreshToken(raw).blacklist()
+            except TokenError:
+                pass
         response = Response(status=status.HTTP_204_NO_CONTENT)
-        response.delete_cookie("access")
-        response.delete_cookie("refresh")
-        response.delete_cookie("logged_in")
+        for name in ["access", "refresh", "logged_in"]:
+            response.delete_cookie(name, path=settings.COOKIE_PATH, samesite=settings.COOKIE_SAMESITE)
         return response

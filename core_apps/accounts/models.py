@@ -55,6 +55,7 @@ class BankAccount(TimeStampedModel):
     
     class Meta:
         verbose_name = _("Bank Account")
+        constraints = [models.CheckConstraint(check=models.Q(account_balance__gte=0), name="bank_balance_nonnegative")]
         verbose_name_plural = _("Bank Accounts")
         ordering = ["-created_at"]
         unique_together = ("user", "account_type", "currency")  # Ensure a user cannot have multiple accounts of the same type and currency
@@ -84,6 +85,7 @@ class Transaction(TimeStampedModel):
         
         
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
+    performed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="performed_transactions")
     amount = models.DecimalField(_("Amount"), max_digits=12, decimal_places=2, default=0.00) 
     description = models.CharField(_("Description"), max_length=500, null=True, blank=True)
     receiver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="received_transactions")
@@ -131,3 +133,22 @@ class SuspiciousActivityAlert(TimeStampedModel):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class IdempotencyRecord(TimeStampedModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    scope = models.CharField(max_length=80)
+    key = models.CharField(max_length=128)
+    fingerprint = models.CharField(max_length=64)
+    response = models.JSONField()
+    status_code = models.PositiveSmallIntegerField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "scope", "key"], name="unique_user_request_key")]
+
+
+class StaffAuditLog(TimeStampedModel):
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    action = models.CharField(max_length=80)
+    object_id = models.UUIDField()
+    details = models.JSONField(default=dict)

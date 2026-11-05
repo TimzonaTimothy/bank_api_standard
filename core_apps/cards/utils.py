@@ -10,6 +10,7 @@ from rest_framework import serializers
 from core_apps.accounts.models import BankAccount, Transaction
 from .emails import send_card_top_up_email
 from .models import VirtualCard
+from core_apps.accounts.services import validate_outgoing_limit
 
 
 def generate_card_number() -> str:
@@ -63,6 +64,7 @@ def top_up_card(user, card_id, amount: Decimal) -> VirtualCard:
         raise serializers.ValidationError({"card": "This card is frozen or expired."})
     if account.account_balance < amount:
         raise serializers.ValidationError({"amount": "Insufficient funds for card top-up."})
+    validate_outgoing_limit(account, amount)
     if card.balance + amount > Decimal("9999999999.99"):
         raise serializers.ValidationError({"amount": "The card balance limit would be exceeded."})
     account.account_balance -= amount
@@ -70,7 +72,7 @@ def top_up_card(user, card_id, amount: Decimal) -> VirtualCard:
     account.save(update_fields=["account_balance", "updated_at"])
     card.save(update_fields=["balance", "updated_at"])
     Transaction.objects.create(
-        user=user, sender=user, sender_account=account, amount=amount,
+        user=user, performed_by=user, sender=user, sender_account=account, amount=amount,
         description=f"Top-up to card ending {card.card_number[-4:]}",
         transaction_type=Transaction.TransactionType.WITHDRAWAL,
         status=Transaction.TransactionStatus.COMPLETED,

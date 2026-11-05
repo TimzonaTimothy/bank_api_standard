@@ -9,6 +9,7 @@ from core_apps.user_profile.views import StandardResultsSetPagination
 from .models import VirtualCard
 from .serializers import CardSerializer, CreateCardSerializer, CardTopUpSerializer, CardStatusSerializer
 from .utils import top_up_card
+from core_apps.accounts.services import execute_idempotently
 
 
 class CardQuerysetMixin:
@@ -44,6 +45,9 @@ class CardTopUpAPIView(CardQuerysetMixin, generics.GenericAPIView):
     serializer_class = CardTopUpSerializer
 
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return execute_idempotently(request, "card_top_up", lambda: self.top_up(request))
+
+    def top_up(self, request):
         instance = self.get_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

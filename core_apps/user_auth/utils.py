@@ -1,5 +1,5 @@
-import random 
-import string 
+import secrets
+
 
 def generate_otp(length=6) -> str:
-    return "".join(random.choices(string.digits, k=length))
+    return "".join(secrets.choice("0123456789") for _ in range(length))

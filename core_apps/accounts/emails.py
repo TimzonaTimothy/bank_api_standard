@@ -184,13 +184,14 @@ def send_transfer_email(
 
 
 def send_transfer_otp_email(
-    email, otp
+    email, otp, transaction_data=None
 ) -> None:
-    subject = _("Your OTP for Transfer Authorization")
+    subject = _("Your OTP for Transaction Authorization")
     from_email = settings.DEFAULT_FROM_EMAIL
     recipient_list = [email]
     context = {
         "otp":otp, 
+        "transaction_data": transaction_data,
         "expiry_time":settings.OTP_EXPIRATION,
         "site_name": settings.SITE_NAME,
     }

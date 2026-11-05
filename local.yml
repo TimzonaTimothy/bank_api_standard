@@ -26,7 +26,7 @@ services:
       context: . 
       dockerfile: ./docker/local/postgres/Dockerfile
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - banker_local_db:/var/lib/postgresql/data
       - banker_local_db_backups:/backups
@@ -38,8 +38,8 @@ services:
   mailpit:
     image: docker.io/axllent/mailpit:v1.20.3 
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
     volumes:
       - banker_local_mailpit_db:/data 
     environment:
@@ -75,7 +75,7 @@ services:
     <<: *api
     command: /start-celeryflower.sh
     ports:
-      - "5555:5555" 
+      - "127.0.0.1:5555:5555"
     volumes:
       - flower_db:/app/flower_db
 

@@ -3,12 +3,14 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse, resolve
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from .models import BankAccount, Transaction
 from .views import InitiateTransferView, VerifySecurityQuestionView, VerifyOTPView
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class TransactionEndpointTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
@@ -24,6 +26,7 @@ class TransactionEndpointTests(APITestCase):
         )
         cls.other_account = BankAccount.objects.create(
             user=cls.other, account_number="1000000002", account_type="savings",
+            fully_activated=True, kyc_verified=True,
         )
         cls.outgoing = Transaction.objects.create(
             user=cls.user, sender=cls.user, sender_account=cls.account,
@@ -72,29 +75,16 @@ class TransactionEndpointTests(APITestCase):
             "description": "Test transfer",
         })
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.client.session["transfer_data"]["amount"], "25.00")
+        from core_apps.user_auth.models import OTPChallenge
+        self.assertEqual(OTPChallenge.objects.get(pk=response.json()["transaction"]["challenge_id"]).payload["amount"], "25.00")
         self.account.refresh_from_db()
         self.assertEqual(str(self.account.account_balance), "100.00")
 
-    @patch("core_apps.accounts.views.send_transfer_otp_email")
-    def test_security_question_sends_otp(self, send_email):
-        response = self.client.post(reverse("verify_security_question"), {
-            "security_answer": "wrong answer",
-        })
-        self.assertEqual(response.status_code, 400)
-        send_email.assert_not_called()
-        self.user.security_answer = "blue"
-        self.user.save()
-        response = self.client.post(reverse("verify_security_question"), {
-            "security_answer": "blue",
-        })
-        self.assertEqual(response.status_code, 200)
-        self.user.refresh_from_db()
-        self.assertEqual(len(self.user.otp), 6)
-        send_email.assert_called_once_with(self.user.email, self.user.otp)
+    def test_security_questions_are_retired(self):
+        response = self.client.post(reverse("verify_security_question"), {"security_answer": "blue"})
+        self.assertEqual(response.status_code, 410)
 
-    def test_verify_otp_requires_pending_transfer(self):
-        self.user.set_otp("123456")
+    def test_verify_otp_requires_challenge(self):
         response = self.client.post(reverse("verify_otp"), {"otp": "123456"})
         self.assertEqual(response.status_code, 400)
 

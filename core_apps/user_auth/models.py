@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 
 from .emails import send_account_locked_email
 from .managers import UserManager
+from django.db import transaction
 
 
 class User(AbstractUser):
@@ -46,7 +47,7 @@ class User(AbstractUser):
         max_length=30, 
         choices=SecurityQuestions.choices, 
     )
-    security_answer = models.CharField(_("Security Answer"), max_length=30)
+    security_answer = models.CharField(_("Security Answer"), max_length=128)
     email = models.EmailField(_("Email"), unique=True, db_index=True)
     first_name = models.CharField(_("First Name"), max_length=30) 
     middle_name = models.CharField(_("Middle name"), max_length=30, blank=True, null=True) 
@@ -65,8 +66,7 @@ class User(AbstractUser):
     )
     failed_login_attempts = models.PositiveSmallIntegerField(default=0)
     last_failed_login = models.DateTimeField(null=True, blank=True)
-    otp = models.CharField(_("OTP"), max_length=6, blank=True)
-    otp_expiry_time = models.DateTimeField(_("OTP Expiry Time"),null=True, blank=True)
+    auth_version = models.PositiveIntegerField(default=0)
 
     objects = UserManager()
     USERNAME_FIELD = "email"
@@ -78,19 +78,6 @@ class User(AbstractUser):
         "security_answer",
     ]
 
-    def set_otp(self, otp:str) -> None:
-        self.otp = otp
-        self.otp_expiry_time = timezone.now() + settings.OTP_EXPIRATION 
-        self.save()
-
-    def verify_otp(self, otp:str) -> bool:
-        if self.otp == otp and self.otp_expiry_time > timezone.now():
-            self.otp = ""
-            self.otp_expiry_time = None 
-            self.save()
-            return True
-        return False
-    
     def handle_failed_login_attempts(self) -> None:
         self.failed_login_attempts +=1
         self.last_failed_login = timezone.now()
@@ -138,9 +125,37 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.full_name} - {self.get_role_display()}"
     
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        from django.contrib.auth.hashers import identify_hasher, make_password
+        if self.security_answer:
+            try:
+                identify_hasher(self.security_answer)
+            except ValueError:
+                self.security_answer = make_password(self.security_answer)
         if self.email:
             self.email = self.email.lower()
         if self.username:
             self.username = self.username.lower()
+        previous = type(self).objects.select_for_update().filter(pk=self.pk).values("password", "auth_version").first()
+        if previous and previous["password"] != self.password:
+            self.auth_version = previous["auth_version"] + 1
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"auth_version"}
+        elif previous:
+            self.auth_version = previous["auth_version"]
         super().save(*args, **kwargs)
+
+
+class OTPChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="otp_challenges")
+    purpose = models.CharField(max_length=20)
+    code_hash = models.CharField(max_length=128)
+    payload = models.JSONField(default=dict)
+    auth_version = models.PositiveIntegerField()
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    result = models.ForeignKey("accounts.Transaction", on_delete=models.PROTECT, null=True, blank=True)

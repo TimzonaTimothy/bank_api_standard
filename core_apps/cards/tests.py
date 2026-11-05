@@ -35,7 +35,7 @@ class CardEndpointTests(APITestCase):
         self.client.force_authenticate(self.user)
 
     def top_up(self, amount="25.00"):
-        return self.client.post(reverse("cards:card_top_up", args=[self.card.pk]), {"amount": amount})
+        return self.client.post(reverse("cards:card_top_up", args=[self.card.pk]), {"amount": amount}, HTTP_IDEMPOTENCY_KEY="card-test-key")
 
     def assert_balances_unchanged(self):
         self.account.refresh_from_db()
@@ -113,6 +113,16 @@ class CardEndpointTests(APITestCase):
                 self.assertEqual(self.top_up(amount).status_code, 400)
                 self.assert_balances_unchanged()
 
+    def test_top_up_retry_is_idempotent(self):
+        first = self.top_up()
+        second = self.top_up()
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.data, second.data)
+        self.card.refresh_from_db()
+        self.assertEqual(self.card.balance, Decimal('25.00'))
+        self.assertEqual(Transaction.objects.count(), 1)
+        self.assertEqual(self.top_up('30.00').status_code, 400)
+
     def test_frozen_and_expired_cards_cannot_be_topped_up(self):
         self.card.is_active = False
         self.card.save()
@@ -137,7 +147,7 @@ class CardEndpointTests(APITestCase):
             ("card_top_up", self.client.post, {"amount": "25.00"}),
         ]:
             with self.subTest(name=name):
-                response = method(reverse(f"cards:{name}", args=[self.other_card.pk]), data)
+                response = method(reverse(f"cards:{name}", args=[self.other_card.pk]), data, HTTP_IDEMPOTENCY_KEY="other-card-test")
                 self.assertEqual(response.status_code, 404)
 
     def test_anonymous_requests_are_rejected(self):

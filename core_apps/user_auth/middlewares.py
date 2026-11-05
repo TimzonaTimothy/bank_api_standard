@@ -4,6 +4,6 @@ class CustomHeaderMiddleware:
     
     def __call__(self, request):
         response = self.get_response(request)
-        if request.user.is_authenticated:
-            response["X-Django-User"] = request.user.email 
+        if request.path.startswith('/api/'):
+            response['Cache-Control'] = 'no-store'
         return response

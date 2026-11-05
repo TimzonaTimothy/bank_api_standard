@@ -27,7 +27,7 @@ class GenericJSONRenderer(JSONRenderer):
         
         status_code = response.status_code 
         
-        errors = data.get("errors",None)
+        errors = data.get("errors") if isinstance(data, dict) else None
         
         if errors is not None:
             return super(GenericJSONRenderer, self).render(data)
