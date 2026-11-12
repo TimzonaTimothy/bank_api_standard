@@ -212,10 +212,6 @@ docker compose -f local.yml run --rm api python manage.py test core_apps.account
 
 Tests cover authentication, transaction security, concurrent money movement, scheduled account tasks and cards. Use PostgreSQL for concurrency tests to exercise database row locking.
 
-### Current implementation limitations
-
-Profile code needs repairs before relying on the full onboarding/upload flow: `ProfileSerializer` has adjacent `view_count`/`account_currency` strings without a separating comma, a misspelled `neext_of_kin` relation, and an incompatible `update` signature. The file-upload task also expects a `data` key for file payloads while the serializer supplies `path`. These are existing issues; feature descriptions above identify code present in the repository, not a guarantee that every flow currently passes end-to-end checks.
-
 ## Backups and deployment
 
 Use `make backup` and `make backups` for PostgreSQL custom-format archives. Follow the [backup and restore guide](docker/local/postgres/README.md) before restoring data. `make down-v` removes named volumes, including the local database and backup volume.

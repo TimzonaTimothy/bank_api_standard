@@ -1,7 +1,9 @@
 import base64
+from functools import partial
 from typing import Any, Dict
 
 from django.conf import settings
+from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.base import ContentFile
@@ -45,12 +47,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     middle_name = serializers.CharField(
         source="user.middle_name", required=False, allow_blank=True
     )
-    last_name = serializers.CharField(source="user.username")
+    last_name = serializers.CharField(source="user.last_name")
     username = serializers.ReadOnlyField(source="user.username")
     email = serializers.EmailField(source="user.email", read_only=True)
     full_name = serializers.ReadOnlyField(source="user.full_name")
     id_no = serializers.ReadOnlyField(source="user.id_no")
-    date_joined = serializers.DateTimeField(source="user.data_joined", read_only=True)
+    date_joined = serializers.DateTimeField(source="user.date_joined", read_only=True)
     country_of_birth = CountryField(name_only=True)
     country = CountryField(name_only=True)
     phone_number = PhoneNumberField()
@@ -86,19 +88,13 @@ class ProfileSerializer(serializers.ModelSerializer):
             'means_of_identification',
             'id_issue_date',
             'id_expiry_date',
-            'passport_number',
+            'id_number',
             'nationality',
             'phone_number',
             'address',
             'city',
             'country',
             'employment_status',
-            'employer_name',
-            "annual_income",
-            'date_of_employment',
-            'employer_address',
-            'employer_city',
-            'employer_state',
             'next_of_kin',
             'created_at',
             'updated_at',
@@ -108,7 +104,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'id_photo_url',
             'signature_photo',
             'signature_photo_url',
-            'view_count'
+            'view_count',
             'account_currency',
             'account_type',
         ]
@@ -132,51 +128,37 @@ class ProfileSerializer(serializers.ModelSerializer):
         
         return attrs
     
-    def to_representation(self, instance:Profile) -> dict:
-        representation = super().to_representation(instance)
-        
-        representation['next_of_kin'] = NextOfKinSerializer(
-            instance.neext_of_kin.all(), many=True
-        ).data
-        
-        return representation
-    
-    def update(self, instance, Profile, validated_data: dict) -> Profile:
+    def update(self, instance: Profile, validated_data: dict) -> Profile:
         user_data = validated_data.pop('user', {})
-        
         if user_data:
             for attr, value in user_data.items():
                 if attr not in ['email', 'username']:
                     setattr(instance.user, attr, value)
-                    
             instance.user.save()
-                
-            photos_to_upload = {}
-            
-            for field in ['photo', 'id_photo','signature_photo']:
-                if field in validated_data:
-                    photo = validated_data.pop(field)
-                    if photo.size > settings.MAX_UPLOAD_SIZE:
-                        temp_file = default_storage.save(
-                            f"temp_{instance.id}_{field}.jpg", ContentFile(photo.read())
-                        )
-                        temp_file_path = default_storage.path(temp_file)
-                        photos_to_upload[field] = {'type':'file','path':temp_file_path}
-                    else:
-                        image_content = photo.read()
-                        encoded_image = base64.b64encode(image_content).decode('utf-8')
-                        photos_to_upload[field] = {'type':'base64', 'data':encoded_image}
-                        
+
+        photos_to_upload = {}
+        for field in ['photo', 'id_photo', 'signature_photo']:
+            if field in validated_data:
+                photo = validated_data.pop(field)
+                if photo.size > settings.MAX_UPLOAD_SIZE:
+                    storage_name = default_storage.save(
+                        f"temp_{instance.id}_{field}.jpg", ContentFile(photo.read())
+                    )
+                    photos_to_upload[field] = {'type': 'file', 'path': storage_name}
+                else:
+                    encoded_image = base64.b64encode(photo.read()).decode('utf-8')
+                    photos_to_upload[field] = {'type': 'base64', 'data': encoded_image}
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-                
         instance.save()
-            
+
         if photos_to_upload:
-            upload_photos_to_cloudinary.delay(str(instance.id), photos_to_upload)
-                
+            transaction.on_commit(partial(
+                upload_photos_to_cloudinary.delay, str(instance.id), photos_to_upload,
+            ))
         return instance
-        
+
     def get_view_count(self, obj: Profile) -> int:
         content_type = ContentType.objects.get_for_model(obj)
         return ContentView.objects.filter(content_type=content_type, object_id=obj.id).count()
